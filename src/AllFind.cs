@@ -473,9 +473,9 @@ namespace AllFind
         public Visibility HeaderVis { get { return IsHeader ? Visibility.Visible : Visibility.Collapsed; } }
         public Visibility RowVis { get { return IsHeader ? Visibility.Collapsed : Visibility.Visible; } }
         public Visibility SubVis { get { return string.IsNullOrEmpty(Sub) ? Visibility.Collapsed : Visibility.Visible; } }
-        public double IconSize { get { return Big ? 34 : 22; } }
-        public double GlyphSize { get { return Big ? 22 : 15; } }
-        public double TitleSize { get { return Big ? 14.5 : 13; } }
+        public double IconSize { get { return Big ? 40 : 24; } }
+        public double GlyphSize { get { return Big ? 26 : 16; } }
+        public double TitleSize { get { return Big ? 16 : 13.5; } }
         public FontWeight TitleWeight { get { return Big ? FontWeights.SemiBold : FontWeights.Normal; } }
 
         public void Highlight(string q)
@@ -489,7 +489,7 @@ namespace AllFind
 
         // icons load on a background thread; the row shows a placeholder until ready
         int iconState; ImageSource icon;
-        public int IconPx { get { return Icons.Px(Big ? 34 : 22); } }
+        public int IconPx { get { return Icons.Px(Big ? 40 : 24); } }
         public ImageSource Icon
         {
             get
@@ -1144,6 +1144,7 @@ namespace AllFind
         TextBox Box; TextBlock Ph, Status, Count, PTitle, PKind, PPath, PMeta, PGlyph, TilesHead;
         ListBox List; StackPanel Chips, PActions, Keys; ItemsControl Tiles;
         Image PImg, LogoImg; Border Root, PreviewPane, SearchRow; Grid Body; FrameworkElement HomeTop;
+        const double UiScale = 0.88;
         bool tbMode; // opened from the taskbar pill: typing shows in the pill, the panel's own box row is hidden
         int mode; int version; DispatcherTimer debounce;
         bool dark, hiding; Color accent;
@@ -1252,12 +1253,13 @@ namespace AllFind
             foreach (var kv in tok.OrderByDescending(k => k.Key.Length)) xaml = xaml.Replace(kv.Key, kv.Value);
             var content = (FrameworkElement)XamlReader.Parse(xaml);
 
-            Title = "AllFind"; Width = 760; Height = 560; Topmost = false; ShowInTaskbar = false;
+            Title = "AllFind"; Width = 900 * UiScale; Height = 620 * UiScale; Topmost = false; ShowInTaskbar = false;
             ResizeMode = ResizeMode.NoResize; Background = Brushes.Transparent;
             WindowChrome.SetWindowChrome(this, new WindowChrome { CaptionHeight = 0, GlassFrameThickness = new Thickness(-1), ResizeBorderThickness = new Thickness(0), UseAeroCaptionButtons = false, CornerRadius = new CornerRadius(0) });
             FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI");
             TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
             UseLayoutRounding = true;
+            content.LayoutTransform = new ScaleTransform(UiScale, UiScale); // the original layout, just smaller
             Content = content;
 
             Func<string, object> F = n => content.FindName(n);
@@ -1278,7 +1280,7 @@ namespace AllFind
                 int k = i;
                 var b = new Button { Style = (Style)Root.Resources["Chip"], Focusable = false };
                 var sp = new StackPanel { Orientation = Orientation.Horizontal };
-                sp.Children.Add(new TextBlock { Text = ChipGlyphs[i], FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 11, Margin = new Thickness(0, 1, 6, 0), VerticalAlignment = VerticalAlignment.Center });
+                sp.Children.Add(new TextBlock { Text = ChipGlyphs[i], FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 12, Margin = new Thickness(0, 1, 7, 0), VerticalAlignment = VerticalAlignment.Center });
                 sp.Children.Add(new TextBlock { Text = ChipNames[i], VerticalAlignment = VerticalAlignment.Center });
                 b.Content = sp;
                 b.Click += (s, e) => SetMode(k);
@@ -1296,7 +1298,7 @@ namespace AllFind
             TglHide = (CheckBox)F("TglHide"); TglPin = (CheckBox)F("TglPin"); TglStart = (CheckBox)F("TglStart");
             HideSub = (TextBlock)F("HideSub"); PinSub = (TextBlock)F("PinSub");
             StyleIconBtn.Click += (s, e) => { Cfg.Set("style", "icon"); Cfg.Set("bar", "0"); Cfg.Set("hideWin", "1"); ApplyTaskbar(); RefreshSetup(); };
-            StyleBarBtn.Click += (s, e) => { Cfg.Set("style", "bar"); Cfg.Set("bar", "1"); ApplyTaskbar(); RefreshSetup(); };
+            
             TglHide.Click += (s, e) => { Cfg.Set("hideWin", TglHide.IsChecked == true ? "1" : "0"); ApplyTaskbar(); RefreshSetup(); };
             TglPin.Click += (s, e) =>
             {
@@ -1321,6 +1323,8 @@ namespace AllFind
             Pill = new TaskbarPill(this, dark);
             TaskbarPill.InstallHook();
             IconPill = new TaskbarPill(this, dark); IconPill.Enable(false);  // instant click on the pinned icon
+            // the old "Search bar on the taskbar" style is gone: move anyone still on it back to the pinned icon
+            if (Cfg.Get("style", "icon") != "icon") { Cfg.Set("style", "icon"); Cfg.Set("bar", "0"); }
             if (Cfg.Get("setup", "0") == "1") ApplyTaskbar();
 
             debounce = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(28) };
@@ -1374,7 +1378,7 @@ namespace AllFind
         void Prewarm()
         {
             var apps = E.Apps; var recent = E.Recent;
-            int small = Icons.Px(22), big = Icons.Px(34);
+            int small = Icons.Px(24), big = Icons.Px(40);
             var t = new Thread(() =>
             {
                 foreach (var a in apps)
@@ -1537,7 +1541,7 @@ namespace AllFind
             Icons.Scale = k;
             var wa = new Rect(scr.WorkingArea.Left / k, scr.WorkingArea.Top / k, scr.WorkingArea.Width / k, scr.WorkingArea.Height / k);
             var sb = new Rect(scr.Bounds.Left / k, scr.Bounds.Top / k, scr.Bounds.Width / k, scr.Bounds.Height / k);
-            Height = Math.Min(560, wa.Height - 24);
+            Height = Math.Min(620 * UiScale, wa.Height - 24);
             // anchor to the same side as the Start menu: left for a left-aligned taskbar, otherwise centred
             Left = Taskbar.LeftAligned ? wa.Left + 12 : wa.Left + (wa.Width - Width) / 2;
             // final spot just above the taskbar; start fully below it so the panel rises out from behind the
@@ -1754,8 +1758,7 @@ namespace AllFind
             PActions.Children.Clear();
             bool none = h == null || h.IsHeader;
             // home view with nothing selected: give the list the full width instead of an empty side panel
-            ((ColumnDefinition)Root.FindName("PrevCol")).Width = new GridLength(none ? 0 : 232);
-            if (none) { PreviewPane.Visibility = Visibility.Collapsed; return; }
+            if (none) { PreviewPane.Visibility = Visibility.Hidden; return; }
             PreviewPane.Visibility = Visibility.Visible;
             PTitle.Text = h.Title;
             bool isFs = h.Type == Hit.FILE || h.Type == Hit.FOLDER;
@@ -1828,7 +1831,7 @@ namespace AllFind
         {
             var b = new Button { Style = (Style)Root.Resources[primary ? "ActPrimary" : "Act"], Focusable = false };
             var sp = new StackPanel { Orientation = Orientation.Horizontal };
-            sp.Children.Add(new TextBlock { Text = glyph, FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 13, Margin = new Thickness(0, 1, 9, 0), VerticalAlignment = VerticalAlignment.Center });
+            sp.Children.Add(new TextBlock { Text = glyph, FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"), FontSize = 14, Margin = new Thickness(0, 1, 10, 0), VerticalAlignment = VerticalAlignment.Center });
             sp.Children.Add(new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center });
             b.Content = sp; b.Click += (s, e) => OpenHit(h, how);
             PActions.Children.Add(b);
@@ -2079,11 +2082,11 @@ namespace AllFind
     </Style>
     <Style x:Key='Chip' TargetType='Button'>
       <Setter Property='Foreground' Value='@FG'/>
-      <Setter Property='FontSize' Value='12'/>
-      <Setter Property='Margin' Value='0,0,5,0'/>
+      <Setter Property='FontSize' Value='12.5'/>
+      <Setter Property='Margin' Value='0,0,6,0'/>
       <Setter Property='Cursor' Value='Hand'/>
       <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'>
-        <Border x:Name='B' CornerRadius='13' Padding='10,4' Background='@HOVER' BorderBrush='{StaticResource Edge}' BorderThickness='1'>
+        <Border x:Name='B' CornerRadius='15' Padding='13,6' Background='@HOVER' BorderBrush='{StaticResource Edge}' BorderThickness='1'>
           <ContentPresenter/>
         </Border>
         <ControlTemplate.Triggers>
@@ -2095,11 +2098,11 @@ namespace AllFind
     <Style x:Key='Act' TargetType='Button'>
       <Setter Property='HorizontalContentAlignment' Value='Left'/>
       <Setter Property='Foreground' Value='@FG'/>
-      <Setter Property='FontSize' Value='12.5'/>
-      <Setter Property='Margin' Value='0,0,0,2'/>
+      <Setter Property='FontSize' Value='13'/>
+      <Setter Property='Margin' Value='0,0,0,3'/>
       <Setter Property='Cursor' Value='Hand'/>
       <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'>
-        <Border x:Name='B' CornerRadius='6' Padding='10,6' Background='Transparent'>
+        <Border x:Name='B' CornerRadius='6' Padding='12,8' Background='Transparent'>
           <ContentPresenter HorizontalAlignment='{TemplateBinding HorizontalContentAlignment}'/>
         </Border>
         <ControlTemplate.Triggers>
@@ -2109,7 +2112,7 @@ namespace AllFind
     </Style>
     <Style x:Key='ActPrimary' TargetType='Button' BasedOn='{StaticResource Act}'>
       <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'>
-        <Border x:Name='B' CornerRadius='7' Padding='10,7' Background='{StaticResource SelBrush}' BorderBrush='{StaticResource Edge}' BorderThickness='1'>
+        <Border x:Name='B' CornerRadius='8' Padding='12,8' Background='{StaticResource SelBrush}' BorderBrush='{StaticResource Edge}' BorderThickness='1'>
           <ContentPresenter HorizontalAlignment='{TemplateBinding HorizontalContentAlignment}'/>
         </Border>
         <ControlTemplate.Triggers>
@@ -2122,7 +2125,7 @@ namespace AllFind
       <Setter Property='Cursor' Value='Hand'/>
       <Setter Property='Focusable' Value='False'/>
       <Setter Property='Template'><Setter.Value><ControlTemplate TargetType='Button'>
-        <Border x:Name='B' CornerRadius='8' Padding='4,9,4,6' Margin='1' Background='Transparent'>
+        <Border x:Name='B' CornerRadius='8' Padding='6,12,6,8' Margin='2' Background='Transparent'>
           <ContentPresenter HorizontalAlignment='Center'/>
         </Border>
         <ControlTemplate.Triggers>
@@ -2203,40 +2206,40 @@ namespace AllFind
     <Grid.RenderTransform><TranslateTransform/></Grid.RenderTransform>
     <Grid.RowDefinitions><RowDefinition Height='Auto'/><RowDefinition Height='Auto'/><RowDefinition Height='*'/><RowDefinition Height='Auto'/></Grid.RowDefinitions>
 
-    <Border x:Name='SearchRow' Margin='12,12,12,10' CornerRadius='10' ClipToBounds='True' Background='@PANEL' BorderBrush='{StaticResource Edge}' BorderThickness='1'>
+    <Border x:Name='SearchRow' Margin='16,16,16,12' CornerRadius='12' Background='@PANEL' BorderBrush='{StaticResource Edge}' BorderThickness='1'>
       <Grid>
         <Border CornerRadius='0,0,10,10' Height='2' VerticalAlignment='Bottom' Margin='10,0'>
           <Border.Background><LinearGradientBrush StartPoint='0,0' EndPoint='1,0'>
             <GradientStop Color='#003D9BFF' Offset='0'/><GradientStop Color='#FF3D9BFF' Offset='0.25'/><GradientStop Color='#FF8E44F0' Offset='0.75'/><GradientStop Color='#008E44F0' Offset='1'/>
           </LinearGradientBrush></Border.Background>
         </Border>
-        <Grid Margin='10,0,14,0'>
+        <Grid Margin='12,0,16,0'>
           <Grid.ColumnDefinitions><ColumnDefinition Width='Auto'/><ColumnDefinition Width='*'/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions>
-          <Image x:Name='LogoImg' Width='20' Height='20' Margin='2,0,10,0' VerticalAlignment='Center' RenderOptions.BitmapScalingMode='HighQuality'/>
-          <TextBlock x:Name='Ph' Grid.Column='1' Text='Search apps, files, settings &#x2014; anything' FontSize='15' Foreground='@SUB' VerticalAlignment='Center' IsHitTestVisible='False' Margin='2,0,0,0' FontFamily='Segoe UI Variable Display, Segoe UI'/>
-          <TextBox x:Name='Box' Grid.Column='1' FontSize='15' Foreground='@FG' CaretBrush='@ACC' Background='Transparent' BorderThickness='0' Padding='0,9' VerticalContentAlignment='Center' SelectionBrush='@ACC' FontFamily='Segoe UI Variable Display, Segoe UI'/>
+          <Image x:Name='LogoImg' Width='28' Height='28' Margin='0,0,12,0' VerticalAlignment='Center' RenderOptions.BitmapScalingMode='HighQuality'/>
+          <TextBlock x:Name='Ph' Grid.Column='1' Text='Search apps, files, settings &#x2014; anything' FontSize='18' Foreground='@SUB' VerticalAlignment='Center' IsHitTestVisible='False' Margin='2,0,0,0' FontFamily='Segoe UI Variable Display, Segoe UI'/>
+          <TextBox x:Name='Box' Grid.Column='1' FontSize='18' Foreground='@FG' CaretBrush='@ACC' Background='Transparent' BorderThickness='0' Padding='0,14' VerticalContentAlignment='Center' SelectionBrush='@ACC' FontFamily='Segoe UI Variable Display, Segoe UI'/>
           <TextBlock x:Name='Count' Grid.Column='2' FontSize='12' Foreground='@SUB' VerticalAlignment='Center' Margin='10,0,0,0'/>
         </Grid>
       </Grid>
     </Border>
 
-    <StackPanel x:Name='Chips' Grid.Row='1' Orientation='Horizontal' Margin='12,0,12,8'/>
+    <StackPanel x:Name='Chips' Grid.Row='1' Orientation='Horizontal' Margin='16,0,16,10'/>
 
-    <Grid Grid.Row='2' Margin='6,0,12,0'>
-      <Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition x:Name='PrevCol' Width='232'/></Grid.ColumnDefinitions>
+    <Grid Grid.Row='2' Margin='10,0,16,0'>
+      <Grid.ColumnDefinitions><ColumnDefinition Width='*'/><ColumnDefinition x:Name='PrevCol' Width='290'/></Grid.ColumnDefinitions>
       <DockPanel>
         <StackPanel x:Name='HomeTop' DockPanel.Dock='Top' Margin='0,0,0,6'>
-          <TextBlock x:Name='TilesHead' Text='Top apps' FontWeight='SemiBold' FontSize='12' Foreground='@FG' Opacity='0.8' Margin='8,2,0,4'/>
+          <TextBlock x:Name='TilesHead' Text='Top apps' FontWeight='SemiBold' FontSize='12.5' Foreground='@FG' Opacity='0.85' Margin='10,4,0,6'/>
           <ItemsControl x:Name='Tiles'>
             <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns='6' Rows='1'/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate><DataTemplate>
               <Button Style='{StaticResource Tile}'>
-                <StackPanel Width='66'>
-                  <Grid Width='32' Height='32' HorizontalAlignment='Center'>
+                <StackPanel Width='76'>
+                  <Grid Width='36' Height='36' HorizontalAlignment='Center'>
                     <Image Source='{Binding Icon}' RenderOptions.BitmapScalingMode='HighQuality'/>
                     <TextBlock Text='{Binding Glyph}' FontFamily='Segoe Fluent Icons, Segoe MDL2 Assets' FontSize='22' Foreground='@ACC' HorizontalAlignment='Center' VerticalAlignment='Center' Visibility='{Binding GlyphVis}'/>
                   </Grid>
-                  <TextBlock Text='{Binding Title}' FontSize='11.5' Foreground='@FG' TextAlignment='Center' TextWrapping='Wrap' TextTrimming='CharacterEllipsis' MaxHeight='30' Margin='0,6,0,0'/>
+                  <TextBlock Text='{Binding Title}' FontSize='11.5' Foreground='@FG' TextAlignment='Center' TextWrapping='Wrap' TextTrimming='CharacterEllipsis' MaxHeight='32' Margin='0,8,0,0'/>
                 </StackPanel>
               </Button>
             </DataTemplate></ItemsControl.ItemTemplate>
@@ -2246,10 +2249,10 @@ namespace AllFind
                  ScrollViewer.HorizontalScrollBarVisibility='Disabled' VirtualizingPanel.IsVirtualizing='True' VirtualizingPanel.VirtualizationMode='Recycling' VirtualizingPanel.ScrollUnit='Pixel'>
           <ListBox.ItemTemplate><DataTemplate>
             <Grid>
-              <TextBlock Text='{Binding Title}' FontWeight='SemiBold' FontSize='12' Foreground='@FG' Opacity='0.8' Margin='8,8,0,3' Visibility='{Binding HeaderVis}'/>
-              <Grid Visibility='{Binding RowVis}' Margin='9,5,8,5'>
+              <TextBlock Text='{Binding Title}' FontWeight='SemiBold' FontSize='12.5' Foreground='@FG' Opacity='0.85' Margin='10,10,0,4' Visibility='{Binding HeaderVis}'/>
+              <Grid Visibility='{Binding RowVis}' Margin='10,6,8,6'>
                 <Grid.ColumnDefinitions><ColumnDefinition Width='Auto'/><ColumnDefinition Width='*'/><ColumnDefinition Width='Auto'/></Grid.ColumnDefinitions>
-                <Grid Width='{Binding IconSize}' Height='{Binding IconSize}' Margin='0,0,11,0' VerticalAlignment='Center'>
+                <Grid Width='{Binding IconSize}' Height='{Binding IconSize}' Margin='0,0,12,0' VerticalAlignment='Center'>
                   <Image Source='{Binding Icon}' RenderOptions.BitmapScalingMode='HighQuality'/>
                   <TextBlock Text='{Binding Glyph}' FontFamily='Segoe Fluent Icons, Segoe MDL2 Assets' FontSize='{Binding GlyphSize}' Foreground='@ACC' HorizontalAlignment='Center' VerticalAlignment='Center' Visibility='{Binding GlyphVis}'/>
                 </Grid>
@@ -2257,34 +2260,34 @@ namespace AllFind
                   <TextBlock FontSize='{Binding TitleSize}' FontWeight='{Binding TitleWeight}' Foreground='@FG' TextTrimming='CharacterEllipsis'>
                     <Run Text='{Binding Pre, Mode=OneWay}'/><Run Text='{Binding Mid, Mode=OneWay}' FontWeight='Bold'/><Run Text='{Binding Post, Mode=OneWay}'/>
                   </TextBlock>
-                  <TextBlock Text='{Binding Sub}' FontSize='11' Foreground='@SUB' TextTrimming='CharacterEllipsis' Visibility='{Binding SubVis}' Margin='0,1,0,0'/>
+                  <TextBlock Text='{Binding Sub}' FontSize='11.5' Foreground='@SUB' TextTrimming='CharacterEllipsis' Visibility='{Binding SubVis}' Margin='0,1,0,0'/>
                 </StackPanel>
-                <TextBlock Grid.Column='2' Text='{Binding Badge}' FontSize='11' Foreground='@SUB' VerticalAlignment='Center' Margin='10,0,0,0'/>
+                <TextBlock Grid.Column='2' Text='{Binding Badge}' FontSize='11.5' Foreground='@SUB' VerticalAlignment='Center' Margin='10,0,0,0'/>
               </Grid>
             </Grid>
           </DataTemplate></ListBox.ItemTemplate>
         </ListBox>
       </DockPanel>
 
-      <Border x:Name='PreviewPane' Grid.Column='1' Margin='8,0,0,0' CornerRadius='10' Background='@PREV' BorderBrush='{StaticResource Edge}' BorderThickness='1' Padding='12,14'>
+      <Border x:Name='PreviewPane' Grid.Column='1' Margin='10,0,0,0' CornerRadius='12' Background='@PREV' BorderBrush='{StaticResource Edge}' BorderThickness='1' Padding='18'>
         <StackPanel>
-          <Grid Height='72' Margin='0,4,0,10'>
-            <Image x:Name='PImg' MaxWidth='190' MaxHeight='72' RenderOptions.BitmapScalingMode='HighQuality' HorizontalAlignment='Center'>
-              <Image.Effect><DropShadowEffect BlurRadius='14' ShadowDepth='2' Opacity='0.25'/></Image.Effect>
+          <Grid Height='112' Margin='0,10,0,14'>
+            <Image x:Name='PImg' MaxWidth='240' MaxHeight='112' RenderOptions.BitmapScalingMode='HighQuality' HorizontalAlignment='Center'>
+              <Image.Effect><DropShadowEffect BlurRadius='18' ShadowDepth='3' Opacity='0.28'/></Image.Effect>
             </Image>
-            <TextBlock x:Name='PGlyph' FontFamily='Segoe Fluent Icons, Segoe MDL2 Assets' FontSize='40' Foreground='@ACC' HorizontalAlignment='Center' VerticalAlignment='Center'/>
+            <TextBlock x:Name='PGlyph' FontFamily='Segoe Fluent Icons, Segoe MDL2 Assets' FontSize='56' Foreground='@ACC' HorizontalAlignment='Center' VerticalAlignment='Center'/>
           </Grid>
-          <TextBlock x:Name='PTitle' FontSize='14.5' FontWeight='SemiBold' Foreground='@FG' TextAlignment='Center' TextWrapping='Wrap' MaxHeight='42' TextTrimming='CharacterEllipsis' FontFamily='Segoe UI Variable Display, Segoe UI'/>
-          <TextBlock x:Name='PKind' FontSize='11.5' Foreground='@SUB' TextAlignment='Center' Margin='0,3,0,0'/>
-          <Border Height='1' Background='@BORDER' Margin='4,12,4,8'/>
+          <TextBlock x:Name='PTitle' FontSize='17' FontWeight='SemiBold' Foreground='@FG' TextAlignment='Center' TextWrapping='Wrap' MaxHeight='72' TextTrimming='CharacterEllipsis' FontFamily='Segoe UI Variable Display, Segoe UI'/>
+          <TextBlock x:Name='PKind' FontSize='12.5' Foreground='@SUB' TextAlignment='Center' Margin='0,3,0,0'/>
+          <Border Height='1' Background='@BORDER' Margin='0,16,0,12'/>
           <StackPanel x:Name='PActions'/>
-          <TextBlock x:Name='PPath' FontSize='11' Foreground='@SUB' TextWrapping='Wrap' Margin='4,10,4,0' MaxHeight='58' TextTrimming='CharacterEllipsis'/>
-          <TextBlock x:Name='PMeta' FontSize='11' Foreground='@SUB' TextWrapping='Wrap' Margin='4,5,4,0'/>
+          <TextBlock x:Name='PPath' FontSize='11.5' Foreground='@SUB' TextWrapping='Wrap' Margin='2,12,0,0' MaxHeight='64' TextTrimming='CharacterEllipsis'/>
+          <TextBlock x:Name='PMeta' FontSize='11.5' Foreground='@SUB' TextWrapping='Wrap' Margin='2,6,0,0'/>
         </StackPanel>
       </Border>
     </Grid>
 
-    <Grid Grid.Row='3' Margin='14,6,14,9'>
+    <Grid Grid.Row='3' Margin='18,10,18,12'>
       <StackPanel x:Name='Keys' Orientation='Horizontal'/>
       <StackPanel Orientation='Horizontal' HorizontalAlignment='Right' VerticalAlignment='Center'>
         <TextBlock x:Name='Status' FontSize='11.5' Foreground='@SUB' VerticalAlignment='Center'/>
@@ -2298,13 +2301,13 @@ namespace AllFind
   <!-- first-run setup -->
   <Grid x:Name='Setup' Visibility='Collapsed'>
     <Border Background='@SCRIM'/>
-    <Border Width='580' HorizontalAlignment='Center' VerticalAlignment='Center' CornerRadius='14' Background='@CARD' BorderBrush='{StaticResource Edge}' BorderThickness='1' Padding='26,18'>
+    <Border Width='600' HorizontalAlignment='Center' VerticalAlignment='Center' CornerRadius='16' Background='@CARD' BorderBrush='{StaticResource Edge}' BorderThickness='1' Padding='30,26'>
       <StackPanel>
         <Image x:Name='SetupLogo' Width='54' Height='54' HorizontalAlignment='Center'/>
         <TextBlock Text='Make AllFind your taskbar search' FontSize='22' FontWeight='SemiBold' Foreground='@FG' HorizontalAlignment='Center' Margin='0,12,0,4' FontFamily='Segoe UI Variable Display, Segoe UI'/>
-        <TextBlock Text='Pick a style. You can change this anytime with the gear button below.' FontSize='12.5' Foreground='@SUB' HorizontalAlignment='Center'/>
+        <TextBlock Text='A few quick options. You can change these anytime with the gear button below.' FontSize='12.5' Foreground='@SUB' HorizontalAlignment='Center'/>
 
-        <UniformGrid Columns='2' Margin='0,20,0,18'>
+        <UniformGrid Columns='2' Margin='0,20,0,18' Visibility='Collapsed'>
           <Button x:Name='StyleIcon' Style='{StaticResource Choice}' Margin='0,0,6,0'>
             <StackPanel>
               <Border Height='40' CornerRadius='6' Background='@MOCK' Padding='10,0'>
