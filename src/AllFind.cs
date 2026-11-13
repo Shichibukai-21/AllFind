@@ -1253,7 +1253,7 @@ namespace AllFind
             foreach (var kv in tok.OrderByDescending(k => k.Key.Length)) xaml = xaml.Replace(kv.Key, kv.Value);
             var content = (FrameworkElement)XamlReader.Parse(xaml);
 
-            Title = "AllFind"; Width = 900 * UiScale; Height = 620 * UiScale; Topmost = false; ShowInTaskbar = false;
+            Title = "AllFind"; Width = 900 * UiScale; Height = 740; Topmost = false; ShowInTaskbar = false;
             ResizeMode = ResizeMode.NoResize; Background = Brushes.Transparent;
             WindowChrome.SetWindowChrome(this, new WindowChrome { CaptionHeight = 0, GlassFrameThickness = new Thickness(-1), ResizeBorderThickness = new Thickness(0), UseAeroCaptionButtons = false, CornerRadius = new CornerRadius(0) });
             FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI");
@@ -1513,6 +1513,52 @@ namespace AllFind
             if (GetForegroundWindow() != h) { keybd_event(0x12, 0, 0, UIntPtr.Zero); keybd_event(0x12, 0, 2, UIntPtr.Zero); SetForegroundWindow(h); }
         }
 
+        // close on any click outside AllFind (its own panel, menus and taskbar icon count as inside), even when
+        // the click doesn't move focus anywhere
+        [DllImport("user32")] static extern short GetAsyncKeyState(int vk);
+        [DllImport("user32")] static extern bool GetCursorPos(out WPOINT p);
+        [DllImport("user32")] static extern IntPtr WindowFromPoint(WPOINT p);
+        [DllImport("user32", EntryPoint = "GetWindowThreadProcessId")] static extern uint GetWindowPid(IntPtr h, out uint pid);
+        [StructLayout(LayoutKind.Sequential)] struct WPOINT { public int X, Y; }
+        static readonly uint MyPid = (uint)Process.GetCurrentProcess().Id;
+        DispatcherTimer outside; DateTime watchFrom;
+        void WatchOutside()
+        {
+            watchFrom = DateTime.Now;
+            if (outside == null)
+            {
+                outside = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(60) };
+                outside.Tick += (s, e) =>
+                {
+                    if (!IsVisible || hiding) { outside.Stop(); return; }
+                    if ((DateTime.Now - watchFrom).TotalMilliseconds < 350) return;   // the click that opened us
+                    if ((GetAsyncKeyState(0x01) & 0x8000) == 0 && (GetAsyncKeyState(0x02) & 0x8000) == 0 && (GetAsyncKeyState(0x04) & 0x8000) == 0) return;
+                    WPOINT p; GetCursorPos(out p);
+                    uint pid; GetWindowPid(WindowFromPoint(p), out pid);
+                    if (pid != MyPid) HidePopup();
+                };
+            }
+            outside.Start();
+        }
+
+        [DllImport("user32", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+        // Start, Windows Search, notifications and quick settings sit in a layer above every app window, so
+        // Windows closes them when you click the taskbar. Our click layer doesn't, so close them ourselves.
+        void CloseShellFlyout()
+        {
+            var sb = new StringBuilder(64);
+            if (GetClassName(GetForegroundWindow(), sb, 64) == 0) return;
+            string c = sb.ToString();
+            if (c != "Windows.UI.Core.CoreWindow" && c != "XamlExplorerHostIslandWindow" && c != "ControlCenterWindow") return;
+            keybd_event(0x1B, 0, 0, UIntPtr.Zero); keybd_event(0x1B, 0, 2, UIntPtr.Zero);   // Esc
+            for (int i = 0; i < 15 && GetForegroundWindow() != IntPtr.Zero; i++)
+            {
+                sb.Clear(); GetClassName(GetForegroundWindow(), sb, 64);
+                if (sb.ToString() != c) break;
+                Thread.Sleep(10);
+            }
+        }
+
         void SetTbMode(bool tb)
         {
             tbMode = tb;   // the panel keeps its own search box at the top; the taskbar pill mirrors it
@@ -1531,6 +1577,7 @@ namespace AllFind
                 return;
             }
             hiding = false;
+            CloseShellFlyout();
             SetTbMode(fromTaskbar);
             if (fromTaskbar) Box.Clear();
             // monitor under the mouse, in physical pixels -> convert to WPF units
@@ -1541,7 +1588,7 @@ namespace AllFind
             Icons.Scale = k;
             var wa = new Rect(scr.WorkingArea.Left / k, scr.WorkingArea.Top / k, scr.WorkingArea.Width / k, scr.WorkingArea.Height / k);
             var sb = new Rect(scr.Bounds.Left / k, scr.Bounds.Top / k, scr.Bounds.Width / k, scr.Bounds.Height / k);
-            Height = Math.Min(620 * UiScale, wa.Height - 24);
+            Height = Math.Min(740, wa.Height - 24);
             // anchor to the same side as the Start menu: left for a left-aligned taskbar, otherwise centred
             Left = Taskbar.LeftAligned ? wa.Left + 12 : wa.Left + (wa.Width - Width) / 2;
             // final spot just above the taskbar; start fully below it so the panel rises out from behind the
@@ -1556,7 +1603,16 @@ namespace AllFind
             Top = from;
             Show(); ForceForeground(); Activate();
             Box.Focus(); Box.SelectAll();
-            Slide(from, final, 170, true, null);
+            // Windows sometimes hands focus back to the previous window a moment later (e.g. while Start closes):
+            // take it back so typing always lands in the search box
+            WatchOutside();
+            foreach (int ms in new[] { 120, 300, 600 })
+            {
+                var ft = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(ms) };
+                ft.Tick += (s2, e2) => { ft.Stop(); if (IsVisible && !hiding && !IsActive) { ForceForeground(); Activate(); Box.Focus(); } };
+                ft.Start();
+            }
+            Slide(from, final, 170, true, () => { if (IsVisible && !hiding) Topmost = true; });
             if (Cfg.Get("setup", "0") != "1") ShowSetup();
             if ((DateTime.Now - E.LastQuick).TotalMinutes > 20 && E.Loaded) E.Rebuild(false);
             Run();
@@ -1594,6 +1650,7 @@ namespace AllFind
         {
             if (!IsVisible || hiding) return;
             hiding = true;
+            Topmost = false;
             if (IconPill != null) IconPill.Collapse();
             if (Pill != null) Pill.SetText("");
             if (Pill != null && Pill.Expanded) Pill.Collapse();
@@ -1907,7 +1964,13 @@ namespace AllFind
                 if (h.Type == Hit.FILE && !prog) add("", "Open with…", () => { Process.Start("rundll32.exe", "shell32.dll,OpenAs_RunDLL " + h.Path); HidePopup(); });
                 if (target != null) add("", "Open file location", () => OpenHit(h, 1));
                 if (h.Type == Hit.FOLDER) add("", "Open in Terminal", () => OpenHit(h, 4));
-                int extrasAt = cm.Items.Count;
+                if (prog)
+                {
+                    // Windows only lets File Explorer itself pin things, so open Explorer's own menu on the program
+                    if (target != null) add("\uE718", "Pin to taskbar", () => { HidePopup(); PinViaExplorer(target); });
+                    add("\uE74D", "Uninstall", () => { HidePopup(); Uninstall(target); });
+                    add("\uE8E5", "Send to desktop (create shortcut)", () => SendToDesktop(h));
+                }
                 sep();
                 if (target != null) add("", "Copy path", () => OpenHit(h, 3));
                 if (fs) add("", "Copy", () =>
@@ -1916,46 +1979,105 @@ namespace AllFind
                     try { Clipboard.SetFileDropList(files); Count.Text = "Copied ✓"; } catch { }
                 });
                 if (target != null) add("", "Properties", () => { HidePopup(); ShellMenu.Properties(target); });
-                sep();
-                add("", "Show more options", () =>
-                {
-                    var p = WF.Cursor.Position; bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
-                    string parse = ParseName(h);
-                    Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
-                    {
-                        if (ShellMenu.Show(parse, hwnd, p.X, p.Y, shift)) HidePopup(); else Box.Focus();
-                    }));
-                });
-                // Windows' own Pin to Start / Pin to taskbar / Uninstall for apps, fetched off the UI thread
-                if (h.Type == Hit.APP)
-                {
-                    string parse = ParseName(h);
-                    var t = new Thread(() =>
-                    {
-                        var items = ShellMenu.Items(parse, x => x.StartsWith("Pin to") || x.StartsWith("Unpin from") || x == "Uninstall");
-                        if (items.Count == 0) return;
-                        Dispatcher.BeginInvoke(new Action(() =>
-                        {
-                            int at = extrasAt;
-                            cm.Items.Insert(at++, new Separator { Style = (Style)Root.Resources["Sep"] });
-                            foreach (var it in items)
-                            {
-                                string text = it;
-                                cm.Items.Insert(at++, make(text == "Uninstall" ? "" : text.StartsWith("Unpin") ? "" : "", text, () =>
-                                {
-                                    HidePopup();
-                                    ShellMenu.InvokeText(parse, text, hwnd);
-                                }));
-                            }
-                        }));
-                    });
-                    t.SetApartmentState(ApartmentState.STA); t.IsBackground = true; t.Start();
-                }
             }
             if (anchor != null) { cm.PlacementTarget = anchor; cm.Placement = PlacementMode.Bottom; cm.HorizontalOffset = 40; }
             else cm.Placement = PlacementMode.MousePoint;
             cm.Closed += (s, e) => { if (IsVisible && !hiding) Box.Focus(); };
             cm.IsOpen = true;
+        }
+
+        // opens File Explorer with the program selected and pops up Explorer's own menu, where "Pin to taskbar"
+        // works (Windows refuses it from any other app). Keys are only sent once that Explorer window is in front.
+        [DllImport("user32", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+        [DllImport("user32")] static extern bool AllowSetForegroundWindow(int pid);
+        void PinViaExplorer(string file)
+        {
+            AllowSetForegroundWindow(-1);   // let Explorer come to the front (we're giving it our focus)
+            Process.Start("explorer.exe", "/select,\"" + file + "\"");
+            string folder = Path.GetFileName(Path.GetDirectoryName(file)) ?? "";
+            new Thread(() =>
+            {
+                var sb = new StringBuilder(256);
+                for (int i = 0; i < 40; i++)
+                {
+                    Thread.Sleep(100);
+                    IntPtr fg = GetForegroundWindow();
+                    sb.Clear(); GetClassName(fg, sb, 256); if (sb.ToString() != "CabinetWClass") continue;
+                    sb.Clear(); GetWindowText(fg, sb, 256); if (sb.ToString().IndexOf(folder, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    Thread.Sleep(500);   // let Explorer finish selecting the file
+                    if (GetForegroundWindow() != fg) return;
+                    keybd_event(0x10, 0, 0, UIntPtr.Zero); keybd_event(0x79, 0, 0, UIntPtr.Zero);       // Shift+F10
+                    keybd_event(0x79, 0, 2, UIntPtr.Zero); keybd_event(0x10, 0, 2, UIntPtr.Zero);
+                    return;
+                }
+            }) { IsBackground = true }.Start();
+        }
+
+        // runs the program's own uninstaller (the one Settings > Installed apps uses); otherwise opens that page
+        void Uninstall(string exe)
+        {
+            string cmd = exe == null ? null : FindUninstaller(exe);
+            if (cmd != null)
+            {
+                try
+                {
+                    string file, args;
+                    if (cmd.StartsWith("\"")) { int q = cmd.IndexOf('"', 1); file = cmd.Substring(1, q - 1); args = cmd.Substring(q + 1).Trim(); }
+                    else { int e2 = cmd.IndexOf(".exe", StringComparison.OrdinalIgnoreCase); file = e2 > 0 ? cmd.Substring(0, e2 + 4) : cmd; args = e2 > 0 ? cmd.Substring(e2 + 4).Trim() : ""; }
+                    Process.Start(new ProcessStartInfo(file, args) { UseShellExecute = true });
+                    return;
+                }
+                catch (Win32Exception) { return; }   // the admin prompt was cancelled
+                catch { }
+            }
+            Process.Start(new ProcessStartInfo("ms-settings:appsfeatures") { UseShellExecute = true });
+        }
+        static string FindUninstaller(string exe)
+        {
+            string dir = Path.GetDirectoryName(exe).TrimEnd('\\') + "\\";
+            var roots = new[] {
+                Registry.LocalMachine.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall"),
+                Registry.LocalMachine.OpenSubKey(@"Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"),
+                Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall") };
+            string best = null; int bestLen = 0;
+            foreach (var root in roots)
+            {
+                if (root == null) continue;
+                using (root)
+                    foreach (var name in root.GetSubKeyNames())
+                        using (var k = root.OpenSubKey(name))
+                        {
+                            if (k == null) continue;
+                            string un = k.GetValue("UninstallString") as string;
+                            object sc = k.GetValue("SystemComponent");
+                            if (string.IsNullOrEmpty(un) || (sc is int && (int)sc == 1)) continue;
+                            string icon = ((k.GetValue("DisplayIcon") as string) ?? "").Trim('"');
+                            int comma = icon.LastIndexOf(','); if (comma > 2) icon = icon.Substring(0, comma).Trim('"');
+                            if (string.Equals(icon, exe, StringComparison.OrdinalIgnoreCase)) return un;
+                            string loc = ((k.GetValue("InstallLocation") as string) ?? "").Trim('"').TrimEnd('\\');
+                            if (loc.Length > 3 && dir.StartsWith(loc + "\\", StringComparison.OrdinalIgnoreCase) && loc.Length > bestLen) { best = un; bestLen = loc.Length; }
+                        }
+            }
+            return best;
+        }
+
+        // a shortcut on the desktop: a normal .lnk for programs; Store apps get one that opens them through Explorer
+        void SendToDesktop(Hit h)
+        {
+            string desk = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            string target = h.Type == Hit.APP ? h.Target : h.Path;
+            string name = string.Join("_", (h.Title ?? Path.GetFileNameWithoutExtension(target ?? "App")).Split(Path.GetInvalidFileNameChars()));
+            string dest = Path.Combine(desk, name + ".lnk");
+            if (target != null && target.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)) File.Copy(target, dest, true);
+            else
+            {
+                dynamic ws = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell"));
+                dynamic lnk = ws.CreateShortcut(dest);
+                if (target != null) { lnk.TargetPath = target; lnk.WorkingDirectory = Path.GetDirectoryName(target); }
+                else { lnk.TargetPath = "explorer.exe"; lnk.Arguments = "shell:AppsFolder\\" + h.AppId; }   // Store app
+                lnk.Save();
+            }
+            Count.Text = "Shortcut added to your desktop ✓";
         }
 
         void Move(int d)

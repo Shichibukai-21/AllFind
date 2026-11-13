@@ -217,7 +217,7 @@ namespace AllFind
                 int dirty = Dirty;
                 if (dirty == seenDirty && sentRect != null && (DateTime.Now - lastSent).TotalSeconds < 60) continue;
                 if (dirty == seenDirty && sentRect == null && DateTime.Now < nextIdle) continue;
-                seenDirty = dirty; nextIdle = DateTime.Now.AddSeconds(5);
+                seenDirty = dirty; nextIdle = DateTime.Now.AddSeconds(2);
                 try
                 {
                     IntPtr t = Taskbar.FindWindow("Shell_TrayWnd", null);
@@ -243,7 +243,7 @@ namespace AllFind
                     {
                         el = Taskbar.FindPinned(AutomationElement.FromHandle(t));
                         elTray = t; elBar = bar;
-                        if (el != null) r = el.Current.BoundingRectangle; else nextFind = DateTime.Now.AddSeconds(30);
+                        if (el != null) r = el.Current.BoundingRectangle; else nextFind = DateTime.Now.AddSeconds(2);  // lost the icon: look again soon, or clicks fall through to Windows
                     }
                     SlotFound = r != null;
                     // only wake the UI thread when something actually changed (plus a slow keep-on-top refresh)
