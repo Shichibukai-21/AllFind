@@ -1246,8 +1246,8 @@ namespace AllFind
             // glass palette: mostly-transparent layers over a live blur of the desktop
             tok["@BG"] = dark ? "#160C0C14" : "#20FFFFFF";
             // our dark blue-violet gradient laid over Windows' acrylic blur, translucent so the blur still shows
-            tok["@BGA"] = dark ? "#A6100E1E" : "#80F3F1FF";
-            tok["@BGB"] = dark ? "#B0231638" : "#88E6DCFF";
+            tok["@BGA"] = dark ? "#6A07070C" : "#5CF3F1FA";
+            tok["@BGB"] = dark ? "#7A140F22" : "#66E4DDF5";
             tok["@PANEL"] = dark ? "#13FFFFFF" : "#5FFFFFFF";
             tok["@PREV"] = dark ? "#0DFFFFFF" : "#48FFFFFF";
             tok["@BORDER"] = dark ? "#1CFFFFFF" : "#16000000";
