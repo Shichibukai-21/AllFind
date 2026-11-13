@@ -33,6 +33,15 @@ from the taskbar and costs no more than Windows Search.
 - Build needs `powershell -ExecutionPolicy Bypass -File srcuild.ps1` on this PC (scripts are disabled).
 - Idle after restart: 13 MB, exe 284 KB.
 
+## Distribution (2026-11-13)
+- Source: `Documents\AllFind`, git repo, GitHub `Shichibukai-21/AllFind` (public).
+- `src/Setup.cs`: entry point, tray, self-install (a copy run from anywhere copies itself to
+  `%LOCALAPPDATA%\Programs\AllFind`, adds a Start menu shortcut and an Installed apps entry, then hands over; `--portable`
+  skips this), `--uninstall`, and `Updater` (GitHub latest release, 45 s after start + every 6 h + tray "Check for updates";
+  only the installed copy updates; swap via rename to `.old`, restart with `--updated` once the panel is closed).
+- Release: `powershell -ExecutionPolicy Bypass -File srcelease.ps1 X.Y.Z "notes"` (writes `src/Version.cs`, builds,
+  commits, tags, pushes, `gh release create` with `AllFind\AllFind.exe`).
+
 ## Not done / unverified
 - User's own clicks on the setup toggles not watched; settings now read `style=icon`, `bar=0`
   (was `bar` at end of chat), so the user likely switched to icon-only.

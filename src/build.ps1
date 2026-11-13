@@ -14,6 +14,6 @@ if ($LASTEXITCODE -ne 0) { throw "icongen compile failed" }
 
 # 2) compile the app
 $refs = $wpf + (@("System.Windows.Forms.dll","System.Drawing.dll","Microsoft.CSharp.dll","System.Core.dll","System.Data.dll","System.Xml.dll","WPF\UIAutomationClient.dll","WPF\UIAutomationTypes.dll") | ForEach-Object { "/r:$fw\$_" })
-& $csc /nologo /unsafe /codepage:65001 /optimize+ /target:winexe /platform:x64 "/out:$out\AllFind.exe" "/win32icon:$here\app.ico" "/win32manifest:$here\app.manifest" $refs "$here\AllFind.cs" "$here\Logo.cs" "$here\Taskbar.cs"
+& $csc /nologo /unsafe /codepage:65001 /optimize+ /target:winexe /platform:x64 "/out:$out\AllFind.exe" "/win32icon:$here\app.ico" "/win32manifest:$here\app.manifest" $refs "$here\AllFind.cs" "$here\Logo.cs" "$here\Taskbar.cs" "$here\Setup.cs" "$here\Version.cs"
 if ($LASTEXITCODE -ne 0) { throw "compile failed" }
 Write-Host "Built $out\AllFind.exe"
