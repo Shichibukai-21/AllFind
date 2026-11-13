@@ -368,11 +368,12 @@ namespace AllFind
 
         void Click()
         {
-            if (bar) { win.Toggle(); return; }
             if (dwell != null) dwell.Stop();
             // double-clicks and fast repeat clicks: one action per 350 ms, so it never opens/closes twice
             if ((DateTime.Now - lastClick).TotalMilliseconds < 350) return;
             lastClick = DateTime.Now;
+            // "Icon only" style: a plain icon, a click opens or closes the panel, nothing grows out of it
+            if (bar || !Grows) { win.ToggleFromTaskbar(); return; }
             if (!expanded || !win.IsVisible) { armed = false; if (expanded) win.ShowFromTaskbar(); else Expand(false); return; }
             // it opened by hover and you clicked to "open" it: keep it open instead of closing it on you
             bool justHovered = byHover && (DateTime.Now - expandedAt).TotalMilliseconds < 1500;
@@ -380,7 +381,8 @@ namespace AllFind
             if (justHovered) win.ShowFromTaskbar();
             else win.HidePopup();
         }
-        DateTime lastClick = DateTime.MinValue;
+        DateTime lastClick = DateTime.MinValue; TextBlock barLabel;
+        static bool Grows { get { return false; } } // the pinned icon stays a plain icon in both styles
 
         bool byHover; DateTime placedAt;
         void Expand(bool hovered)
@@ -417,6 +419,7 @@ namespace AllFind
         // mirror what's typed into the panel, so it feels like typing straight into the taskbar
         public void SetText(string t)
         {
+            if (bar) { if (barLabel != null) barLabel.Text = string.IsNullOrEmpty(t) ? "Search" : (t.Length > 26 ? "…" + t.Substring(t.Length - 25) : t); return; }
             if (xText == null) return;
             t = t ?? "";
             xPh.Visibility = t.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -465,7 +468,7 @@ namespace AllFind
             {
                 if (expanded) return;
                 hover.Color = hc;
-                if (armed && Mouse.LeftButton != MouseButtonState.Pressed && (DateTime.Now - placedAt).TotalMilliseconds > 500) { dwell.Stop(); dwell.Start(); }
+                if (Grows && armed && Mouse.LeftButton != MouseButtonState.Pressed && (DateTime.Now - placedAt).TotalMilliseconds > 500) { dwell.Stop(); dwell.Start(); }
             };
             root.MouseLeave += (s, e) => { if (dwell != null) dwell.Stop(); armed = true; if (!expanded) hover.Color = Colors.Transparent; };
             root.MouseLeftButtonDown += (s, e) => { if (!expanded) hover.Color = pc; };
@@ -483,7 +486,7 @@ namespace AllFind
             pill = new Border { Background = fill, BorderBrush = edge, BorderThickness = new Thickness(1), SnapsToDevicePixels = true };
             var sp = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(12, 0, 12, 0) };
             sp.Children.Add(new Image { Source = Logo.Image(64, true), Width = 20, Height = 20, Margin = new Thickness(0, 0, 9, 0) });
-            sp.Children.Add(new TextBlock
+            sp.Children.Add(barLabel = new TextBlock
             {
                 Text = "Search", FontSize = 13.5, VerticalAlignment = VerticalAlignment.Center,
                 FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),

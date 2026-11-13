@@ -1328,7 +1328,7 @@ namespace AllFind
             Box.TextChanged += (s, e) =>
             {
                 Ph.Visibility = Box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed; debounce.Stop(); debounce.Start();
-                if (tbMode && IconPill != null) IconPill.SetText(Box.Text);
+                if (tbMode && Pill != null) Pill.SetText(Box.Text);
             };
             PreviewKeyDown += OnKey;
             List.SelectionChanged += (s, e) => UpdatePreview();
@@ -1488,6 +1488,11 @@ namespace AllFind
             ShowPopup();
         }
         public void ShowFromTaskbar() { ShowPopup(true); }
+        public void ToggleFromTaskbar()
+        {
+            if (IsVisible && !hiding) { if (IsActive) HidePopup(); else ShowPopup(true); return; }
+            ShowPopup(true);
+        }
 
         // Windows only lets the foreground app hand out focus; when we're opened by hover there was no click,
         // so borrow the foreground thread's input state for a moment (and as a last resort tap Alt).
@@ -1517,7 +1522,7 @@ namespace AllFind
             if (IsVisible && !hiding)
             {
                 // already open: just make sure it has the keyboard (no second slide, no flicker)
-                if (fromTaskbar != tbMode) { SetTbMode(fromTaskbar); if (fromTaskbar) IconPill.SetText(Box.Text); }
+                if (fromTaskbar != tbMode) { SetTbMode(fromTaskbar); if (fromTaskbar) Pill.SetText(Box.Text); }
                 ForceForeground(); Activate(); Box.Focus();
                 return;
             }
@@ -1586,6 +1591,7 @@ namespace AllFind
             if (!IsVisible || hiding) return;
             hiding = true;
             if (IconPill != null) IconPill.Collapse();
+            if (Pill != null) Pill.SetText("");
             if (Pill != null && Pill.Expanded) Pill.Collapse();
             Slide(Top, slideFrom, 110, false, () => { if (hiding) { Hide(); hiding = false; } });
         }
