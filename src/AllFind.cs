@@ -1471,13 +1471,11 @@ namespace AllFind
             SetWindowLong(h, -16, GetWindowLong(h, -16) & ~0x00080000);
             int v = dark ? 1 : 0; DwmSetWindowAttribute(h, 20, ref v, 4);
             v = 2; DwmSetWindowAttribute(h, 33, ref v, 4);
-            // true acrylic blur-behind with a light tint (far more see-through than the stock backdrop);
-            // fall back to the system acrylic, then to a solid colour
-            if (!AcrylicBlur(h, dark ? 0x9A1C1A1Cu : 0xA6F6F3F3u))
-            {
-                v = 3; int hr = DwmSetWindowAttribute(h, 38, ref v, 4);
-                if (hr != 0) Root.Background = new SolidColorBrush(dark ? Color.FromRgb(30, 30, 34) : Color.FromRgb(243, 243, 246));
-            }
+            // Windows 11's own acrylic (the Start menu / flyout material): blurs what's behind the panel.
+            // Older builds without it fall back to the composition-attribute acrylic, then to a solid colour.
+            v = 3; int hr = DwmSetWindowAttribute(h, 38, ref v, 4);
+            if (hr != 0 && !AcrylicBlur(h, dark ? 0x9A1C1A1Cu : 0xA6F6F3F3u))
+                Root.Background = new SolidColorBrush(dark ? Color.FromRgb(30, 30, 34) : Color.FromRgb(243, 243, 246));
             Icons.Scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
             DpiChanged += (s2, e2) => { Icons.Scale = e2.NewDpi.DpiScaleX; };
             src.AddHook(WndProc);
