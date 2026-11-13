@@ -212,6 +212,13 @@ namespace AllFind
         interface IShellItemImageFactory { [PreserveSig] int GetImage(SIZE size, int flags, out IntPtr phbm); }
         [StructLayout(LayoutKind.Sequential)] struct SIZE { public int cx, cy; }
         [StructLayout(LayoutKind.Sequential)] struct BITMAP { public int bmType, bmWidth, bmHeight, bmWidthBytes; public short bmPlanes, bmBitsPixel; public IntPtr bmBits; }
+        // BITMAP + BITMAPINFOHEADER: the header's height sign tells bottom-up (icons) from top-down (thumbnails)
+        [StructLayout(LayoutKind.Sequential)] struct DIBSECTION
+        {
+            public BITMAP dsBm;
+            public int biSize, biWidth, biHeight; public short biPlanes, biBitCount; public int biCompression, biSizeImage, biXPels, biYPels, biClrUsed, biClrImportant;
+            public int bf0, bf1, bf2; public IntPtr dshSection; public int dsOffset;
+        }
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         struct SHFILEINFO { public IntPtr hIcon; public int iIcon; public uint attr; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string disp; [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string type; }
 
@@ -219,7 +226,7 @@ namespace AllFind
         static extern int SHCreateItemFromParsingName(string path, IntPtr pbc, ref Guid riid, [MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory ppv);
         [DllImport("shell32", CharSet = CharSet.Unicode)] static extern IntPtr SHGetFileInfoW(string p, uint attr, ref SHFILEINFO psfi, int cb, uint flags);
         [DllImport("shell32")] static extern int SHGetKnownFolderPath(ref Guid id, int flags, IntPtr token, out IntPtr path);
-        [DllImport("gdi32")] static extern int GetObject(IntPtr h, int size, ref BITMAP bm);
+        [DllImport("gdi32")] static extern int GetObject(IntPtr h, int size, ref DIBSECTION ds);
         [DllImport("gdi32")] static extern bool DeleteObject(IntPtr h);
 
         static readonly Dictionary<string, ImageSource> cache = new Dictionary<string, ImageSource>();
@@ -239,11 +246,14 @@ namespace AllFind
                 IShellItemImageFactory f;
                 if (SHCreateItemFromParsingName(parse, IntPtr.Zero, ref g, out f) == 0 && f != null)
                 {
-                    IntPtr hbm;
+                    IntPtr hbm = IntPtr.Zero;
                     var sz = new SIZE { cx = size, cy = size };
-                    if (f.GetImage(sz, thumb ? 0 : 4, out hbm) == 0 && hbm != IntPtr.Zero)
+                    // real thumbnails (THUMBNAILONLY) arrive top-down even though their header says bottom-up;
+                    // icons (ICONONLY) really are bottom-up. Without a thumbnail, fall back to the icon.
+                    bool gotThumb = thumb && f.GetImage(sz, 0x8, out hbm) == 0 && hbm != IntPtr.Zero;
+                    if (gotThumb || (f.GetImage(sz, 4, out hbm) == 0 && hbm != IntPtr.Zero))
                     {
-                        img = FromHBitmap(hbm);
+                        img = FromHBitmap(hbm, gotThumb);
                         DeleteObject(hbm);
                     }
                     Marshal.ReleaseComObject(f);
@@ -254,10 +264,12 @@ namespace AllFind
             return img;
         }
 
-        static BitmapSource FromHBitmap(IntPtr hbm)
+        static BitmapSource FromHBitmap(IntPtr hbm, bool topDownData)
         {
-            var bm = new BITMAP();
-            GetObject(hbm, Marshal.SizeOf(typeof(BITMAP)), ref bm);
+            var ds = new DIBSECTION();
+            GetObject(hbm, Marshal.SizeOf(typeof(DIBSECTION)), ref ds);
+            var bm = ds.dsBm;
+            bool topDown = topDownData || ds.biHeight < 0;
             if (bm.bmBitsPixel != 32 || bm.bmBits == IntPtr.Zero)
             {
                 var s = Imaging.CreateBitmapSourceFromHBitmap(hbm, IntPtr.Zero, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
@@ -267,7 +279,8 @@ namespace AllFind
             var buf = new byte[stride * h];
             Marshal.Copy(bm.bmBits, buf, 0, buf.Length);
             var flipped = new byte[buf.Length];
-            for (int y = 0; y < h; y++) Buffer.BlockCopy(buf, y * stride, flipped, (h - 1 - y) * stride, stride);
+            if (topDown) flipped = buf;
+            else for (int y = 0; y < h; y++) Buffer.BlockCopy(buf, y * stride, flipped, (h - 1 - y) * stride, stride);
             // detect whether the shell gave us premultiplied or straight alpha; treating straight alpha
             // as premultiplied is what produced bright jagged fringes around icons
             bool anyAlpha = false, straight = false;
@@ -517,6 +530,10 @@ namespace AllFind
     static class Icons
     {
         static readonly HashSet<string> PerFile = new HashSet<string> { ".exe", ".lnk", ".ico", ".url", ".appref-ms", ".msc", ".cpl", ".scr" };
+        // pictures and videos show their own thumbnail instead of the file-type icon
+        public static readonly HashSet<string> Thumbs = new HashSet<string> { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".heic", ".heif", ".tif", ".tiff", ".jfif", ".avif",
+            ".mp4", ".mkv", ".mov", ".avi", ".wmv", ".webm", ".m4v", ".mpg", ".mpeg", ".3gp" };
+        static bool IsThumb(Hit h) { return h.Type == Hit.FILE && Thumbs.Contains(System.IO.Path.GetExtension(h.Path).ToLowerInvariant()); }
         public static double Scale = 1.0; // monitor DPI scale
         static readonly int[] Steps = { 32, 48, 64, 96, 128, 256 };
         // request a native icon size at least as big as the on-screen pixels, then let WPF downscale smoothly
@@ -533,7 +550,7 @@ namespace AllFind
             if (h.Type == Hit.FILE)
             {
                 string ext = System.IO.Path.GetExtension(h.Path).ToLowerInvariant();
-                return PerFile.Contains(ext) ? h.Path.ToLowerInvariant() + "|" + size : "ext" + ext + "|" + size;
+                return PerFile.Contains(ext) || Thumbs.Contains(ext) ? h.Path.ToLowerInvariant() + "|" + size : "ext" + ext + "|" + size;
             }
             return null;
         }
@@ -542,7 +559,7 @@ namespace AllFind
             string key = KeyFor(h, size);
             if (key == null) return null;
             string parse = h.Type == Hit.APP ? "shell:AppsFolder\\" + h.AppId : h.Path;
-            return Shell.Image(parse, size, false, key);
+            return Shell.Image(parse, size, IsThumb(h), key);
         }
     }
 
@@ -1185,10 +1202,10 @@ namespace AllFind
             }
             else
             {
-                TglPin.IsChecked = pinned; TglPin.IsEnabled = !pinned;
-                PinSub.Text = pinned ? "Pinned ✓  Clicking it opens AllFind."
-                    : pinHint ? "Windows only lets you pin apps yourself: open Start, right-click AllFind → Pin to taskbar, then drag it next to Start."
-                    : "Not pinned yet — flip this for the 5-second how-to.";
+                TglPin.IsChecked = pinned; TglPin.IsEnabled = true;
+                PinSub.Text = pinHint ? "In the menu that opens, choose " + (pinned ? "Unpin from taskbar." : "Pin to taskbar, then drag the icon next to Start.")
+                    : pinned ? "Pinned ✓  Clicking it opens AllFind. Flip off to unpin."
+                    : "Not pinned yet — flip this on to pin it.";
                 TglHide.IsEnabled = true; TglHide.IsChecked = Taskbar.SearchMode == 0;
                 BtnRefresh.Visibility = Visibility.Collapsed;
                 HideSub.Text = "Hides the Windows search icon/box so AllFind is your only search.";
@@ -1302,9 +1319,23 @@ namespace AllFind
             TglHide.Click += (s, e) => { Cfg.Set("hideWin", TglHide.IsChecked == true ? "1" : "0"); ApplyTaskbar(); RefreshSetup(); };
             TglPin.Click += (s, e) =>
             {
-                if (Cfg.Get("style", "icon") == "bar") { Cfg.Set("bar", TglPin.IsChecked == true ? "1" : "0"); ApplyTaskbar(); }
-                else pinHint = true; // Windows doesn't allow apps to pin themselves: explain how
-                RefreshSetup();
+                if (Cfg.Get("style", "icon") == "bar") { Cfg.Set("bar", TglPin.IsChecked == true ? "1" : "0"); ApplyTaskbar(); RefreshSetup(); return; }
+                // Windows only lets Explorer pin: open Explorer's own menu on AllFind.exe, then watch for the change
+                pinHint = true; bool want = TglPin.IsChecked == true;
+                RefreshSetup(); TglPin.IsChecked = want;
+                string exe = Process.GetCurrentProcess().MainModule.FileName;
+                HidePopup();
+                PinViaExplorer(exe);
+                ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    for (int i = 0; i < 60; i++)   // up to ~30 s for the user to pick Pin/Unpin in Explorer's menu
+                    {
+                        Thread.Sleep(500);
+                        bool p = Taskbar.IsPinned();
+                        if (p == want) { Dispatcher.BeginInvoke(new Action(() => { pinned = p; pinHint = false; RefreshSetup(); })); return; }
+                    }
+                    Dispatcher.BeginInvoke(new Action(() => { pinned = Taskbar.IsPinned(); RefreshSetup(); }));
+                });
             };
             TglStart.Click += (s, e) => { Program.SetStartup(TglStart.IsChecked == true); RefreshSetup(); };
             ((Button)F("BtnDone")).Click += (s, e) => CloseSetup();
@@ -1442,7 +1473,7 @@ namespace AllFind
             v = 2; DwmSetWindowAttribute(h, 33, ref v, 4);
             // true acrylic blur-behind with a light tint (far more see-through than the stock backdrop);
             // fall back to the system acrylic, then to a solid colour
-            if (!AcrylicBlur(h, dark ? 0x4B140E0Eu : 0x52FAF6F6u))
+            if (!AcrylicBlur(h, dark ? 0x9A1C1A1Cu : 0xA6F6F3F3u))
             {
                 v = 3; int hr = DwmSetWindowAttribute(h, 38, ref v, 4);
                 if (hr != 0) Root.Background = new SolidColorBrush(dark ? Color.FromRgb(30, 30, 34) : Color.FromRgb(243, 243, 246));
@@ -1521,10 +1552,10 @@ namespace AllFind
         [DllImport("user32", EntryPoint = "GetWindowThreadProcessId")] static extern uint GetWindowPid(IntPtr h, out uint pid);
         [StructLayout(LayoutKind.Sequential)] struct WPOINT { public int X, Y; }
         static readonly uint MyPid = (uint)Process.GetCurrentProcess().Id;
-        DispatcherTimer outside; DateTime watchFrom;
+        DispatcherTimer outside; DateTime watchFrom; bool wasDown;
         void WatchOutside()
         {
-            watchFrom = DateTime.Now;
+            watchFrom = DateTime.Now; wasDown = true;
             if (outside == null)
             {
                 outside = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(60) };
@@ -1532,7 +1563,10 @@ namespace AllFind
                 {
                     if (!IsVisible || hiding) { outside.Stop(); return; }
                     if ((DateTime.Now - watchFrom).TotalMilliseconds < 350) return;   // the click that opened us
-                    if ((GetAsyncKeyState(0x01) & 0x8000) == 0 && (GetAsyncKeyState(0x02) & 0x8000) == 0 && (GetAsyncKeyState(0x04) & 0x8000) == 0) return;
+                    bool down = (GetAsyncKeyState(0x01) & 0x8000) != 0 || (GetAsyncKeyState(0x02) & 0x8000) != 0 || (GetAsyncKeyState(0x04) & 0x8000) != 0;
+                    bool fresh = down && !wasDown; wasDown = down;
+                    // only judge where a press STARTS: dragging out of the panel (selecting text) must not close it
+                    if (!fresh) return;
                     WPOINT p; GetCursorPos(out p);
                     uint pid; GetWindowPid(WindowFromPoint(p), out pid);
                     if (pid != MyPid) HidePopup();
@@ -1824,6 +1858,8 @@ namespace AllFind
             PMeta.Text = "";
             // show the small cached icon right away, upgrade to the large one / thumbnail asynchronously
             PImg.Source = h.Icon; PImg.Opacity = 1;
+            bool thumb = h.Type == Hit.FILE && Icons.Thumbs.Contains(Path.GetExtension(h.Path).ToLowerInvariant());
+            PImg.MaxHeight = thumb ? 150 : 112;
             PGlyph.Text = h.Glyph ?? "";
             PGlyph.Visibility = h.Icon == null && (h.Type == Hit.SETTING || h.Type == Hit.CALC || h.Type == Hit.MORE) ? Visibility.Visible : Visibility.Collapsed;
             if (h.Type == Hit.APP || isFs)
@@ -1835,7 +1871,7 @@ namespace AllFind
                     if (h.Type == Hit.APP) d.Img = Shell.Image("shell:AppsFolder\\" + h.AppId, px, false, "app:" + h.AppId + "|" + px);
                     else
                     {
-                        d.Img = Shell.Image(h.Path, 256, h.Type == Hit.FILE, null);
+                        d.Img = Shell.Image(h.Path, thumb ? 320 : 256, h.Type == Hit.FILE, null);
                         d.Kind = Shell.TypeName(h.Path, h.Type == Hit.FOLDER);
                         try
                         {
@@ -2393,8 +2429,8 @@ namespace AllFind
 
       <Border x:Name='PreviewPane' Grid.Column='1' Margin='10,0,0,0' CornerRadius='12' Background='@PREV' BorderBrush='{StaticResource Edge}' BorderThickness='1' Padding='18'>
         <StackPanel>
-          <Grid Height='112' Margin='0,10,0,14'>
-            <Image x:Name='PImg' MaxWidth='240' MaxHeight='112' RenderOptions.BitmapScalingMode='HighQuality' HorizontalAlignment='Center'>
+          <Grid Height='150' Margin='0,4,0,12'>
+            <Image x:Name='PImg' MaxWidth='240' MaxHeight='150' RenderOptions.BitmapScalingMode='HighQuality' HorizontalAlignment='Center'>
               <Image.Effect><DropShadowEffect BlurRadius='18' ShadowDepth='3' Opacity='0.28'/></Image.Effect>
             </Image>
             <TextBlock x:Name='PGlyph' FontFamily='Segoe Fluent Icons, Segoe MDL2 Assets' FontSize='56' Foreground='@ACC' HorizontalAlignment='Center' VerticalAlignment='Center'/>

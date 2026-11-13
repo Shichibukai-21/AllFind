@@ -1,5 +1,5 @@
 // set by release.ps1
-[assembly: System.Reflection.AssemblyVersion("1.0.4.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.0.4.0")]
+[assembly: System.Reflection.AssemblyVersion("1.0.5.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.0.5.0")]
 [assembly: System.Reflection.AssemblyTitle("AllFind")]
 [assembly: System.Reflection.AssemblyProduct("AllFind")]
