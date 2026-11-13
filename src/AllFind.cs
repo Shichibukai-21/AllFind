@@ -824,7 +824,7 @@ namespace AllFind
         public int ItemCount { get { return Quick.Count + Full.Count; } }
 
         [DllImport("kernel32")] static extern bool SetProcessWorkingSetSize(IntPtr p, IntPtr min, IntPtr max);
-        // give memory back to Windows: compact the heap after big index work, and drop idle pages while hidden
+        // give memory back to Windows: compact the heap after big index work
         public static void Trim(bool compact)
         {
             try
@@ -834,7 +834,8 @@ namespace AllFind
                     System.Runtime.GCSettings.LargeObjectHeapCompactionMode = System.Runtime.GCLargeObjectHeapCompactionMode.CompactOnce;
                     GC.Collect(2, GCCollectionMode.Forced, true, true);
                 }
-                SetProcessWorkingSetSize(Process.GetCurrentProcess().Handle, (IntPtr)(-1), (IntPtr)(-1));
+                // the working set is deliberately NOT emptied any more: paging the window and icon cache back in
+                // is what made opening feel slow and icons appear late
             }
             catch { }
         }
@@ -1357,6 +1358,7 @@ namespace AllFind
             SourceInitialized += OnSource;
             E.Changed += () => Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
             {
+                if (!prewarmed && E.Apps.Count > 0 && IsLoaded0) { prewarmed = true; Prewarm(); }
                 UpdateStatus();
                 if (IsVisible && (!E.Busy || Box.Text.Trim().Length == 0)) { if (Box.Text.Trim().Length == 0) { if (List.SelectedIndex < 0) Run(); } else Run(); }
             }));
@@ -1364,6 +1366,27 @@ namespace AllFind
             IconLoader.Start(Dispatcher);
             E.Init();
             UpdateStatus();
+        }
+
+        bool prewarmed; bool IsLoaded0 { get { return Icons.Scale > 0 && new WindowInteropHelper(this).Handle != IntPtr.Zero; } }
+        // load every app icon (both row sizes) and the recent files' icons into the cache right after start,
+        // so results show their icons instantly instead of popping in one by one
+        void Prewarm()
+        {
+            var apps = E.Apps; var recent = E.Recent;
+            int small = Icons.Px(22), big = Icons.Px(34);
+            var t = new Thread(() =>
+            {
+                foreach (var a in apps)
+                    foreach (int px in new[] { big, small })
+                        Shell.Image("shell:AppsFolder\\" + a.Id, px, false, "app:" + a.Id + "|" + px);
+                foreach (var kv in recent)
+                {
+                    var h = new Hit { Type = Directory.Exists(kv.Key) ? Hit.FOLDER : Hit.FILE, Path = kv.Key };
+                    try { Icons.Load(h, small); } catch { }
+                }
+            }) { IsBackground = true, Priority = ThreadPriority.BelowNormal, Name = "prewarm" };
+            t.SetApartmentState(ApartmentState.STA); t.Start();
         }
 
         void UpdateStatus()
@@ -1483,11 +1506,7 @@ namespace AllFind
 
         void SetTbMode(bool tb)
         {
-            tbMode = tb;
-            SearchRow.Height = tb ? 0 : double.NaN;
-            SearchRow.Opacity = tb ? 0 : 1;
-            SearchRow.IsHitTestVisible = !tb;
-            SearchRow.Margin = tb ? new Thickness(12, 10, 12, 0) : new Thickness(12, 12, 12, 10);
+            tbMode = tb;   // the panel keeps its own search box at the top; the taskbar pill mirrors it
         }
 
         static readonly IEasingFunction Ease = new CubicEase { EasingMode = EasingMode.EaseOut };
@@ -1528,7 +1547,7 @@ namespace AllFind
             Top = from;
             Show(); ForceForeground(); Activate();
             Box.Focus(); Box.SelectAll();
-            Slide(from, final, 230, true, null);
+            Slide(from, final, 170, true, null);
             if (Cfg.Get("setup", "0") != "1") ShowSetup();
             if ((DateTime.Now - E.LastQuick).TotalMinutes > 20 && E.Loaded) E.Rebuild(false);
             Run();
@@ -1568,7 +1587,7 @@ namespace AllFind
             hiding = true;
             if (IconPill != null) IconPill.Collapse();
             if (Pill != null && Pill.Expanded) Pill.Collapse();
-            Slide(Top, slideFrom, 150, false, () => { if (hiding) { Hide(); hiding = false; TrimSoon(); } });
+            Slide(Top, slideFrom, 110, false, () => { if (hiding) { Hide(); hiding = false; } });
         }
         public void SetQuery(string q) { Box.Text = q; Box.CaretIndex = q.Length; }
 

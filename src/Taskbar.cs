@@ -370,13 +370,17 @@ namespace AllFind
         {
             if (bar) { win.Toggle(); return; }
             if (dwell != null) dwell.Stop();
-            if (!expanded) { armed = false; Expand(false); return; }
-            // a click that lands just after hover-opening means "yes, I want it": keep it open instead of closing
-            bool justHovered = byHover && (DateTime.Now - expandedAt).TotalMilliseconds < 700;
+            // double-clicks and fast repeat clicks: one action per 350 ms, so it never opens/closes twice
+            if ((DateTime.Now - lastClick).TotalMilliseconds < 350) return;
+            lastClick = DateTime.Now;
+            if (!expanded || !win.IsVisible) { armed = false; if (expanded) win.ShowFromTaskbar(); else Expand(false); return; }
+            // it opened by hover and you clicked to "open" it: keep it open instead of closing it on you
+            bool justHovered = byHover && (DateTime.Now - expandedAt).TotalMilliseconds < 1500;
             byHover = false;
-            if (!win.IsVisible || justHovered) win.ShowFromTaskbar();
+            if (justHovered) win.ShowFromTaskbar();
             else win.HidePopup();
         }
+        DateTime lastClick = DateTime.MinValue;
 
         bool byHover; DateTime placedAt;
         void Expand(bool hovered)
