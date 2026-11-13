@@ -28,8 +28,11 @@ The program is written to `AllFind\AllFind.exe`. Run it with `--portable` to tes
 
 ## Release an update
 
+Double-click **Release AllFind.cmd** and type the new version number and what changed. It refuses to release when the
+app itself hasn't changed since the last release, or when the version isn't higher. It also works from any folder:
+
 ```
-powershell -ExecutionPolicy Bypass -File src\release.ps1 1.0.1 "What changed"
+powershell -ExecutionPolicy Bypass -File "%USERPROFILE%\Documents\AllFind\src\release.ps1" 1.0.1 "Fixed the hover delay"
 ```
 
 This builds, commits, tags, pushes and publishes a GitHub release with the exe. Installed copies check for a new
