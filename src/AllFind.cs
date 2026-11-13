@@ -1245,6 +1245,9 @@ namespace AllFind
             var tok = new Dictionary<string, string>();
             // glass palette: mostly-transparent layers over a live blur of the desktop
             tok["@BG"] = dark ? "#160C0C14" : "#20FFFFFF";
+            // our dark blue-violet gradient laid over Windows' acrylic blur, translucent so the blur still shows
+            tok["@BGA"] = dark ? "#A6100E1E" : "#80F3F1FF";
+            tok["@BGB"] = dark ? "#B0231638" : "#88E6DCFF";
             tok["@PANEL"] = dark ? "#13FFFFFF" : "#5FFFFFFF";
             tok["@PREV"] = dark ? "#0DFFFFFF" : "#48FFFFFF";
             tok["@BORDER"] = dark ? "#1CFFFFFF" : "#16000000";
@@ -2167,7 +2170,8 @@ namespace AllFind
 
         const string Xaml = @"
 <Border xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'
-        x:Name='Root' Background='@BG'>
+        x:Name='Root'>
+  <Border.Background><LinearGradientBrush StartPoint='0,0' EndPoint='1,1'><GradientStop Color='@BGA' Offset='0'/><GradientStop Color='@BGB' Offset='1'/></LinearGradientBrush></Border.Background>
   <Border.Resources>
     <LinearGradientBrush x:Key='Edge' StartPoint='0,0' EndPoint='0,1'>
       <GradientStop Color='@EDGE1' Offset='0'/><GradientStop Color='@EDGE2' Offset='1'/>
